@@ -1,0 +1,5 @@
+kubeconfig_*
+secrets/
+values.yml
+*.tfvars
+web.hcl

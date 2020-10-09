@@ -16,7 +16,7 @@ module "eks" {
   }
 
   node_groups = {
-    hcp_consul = {
+    hcp = {
       desired_capacity = 3
       max_capacity     = 3
       min_capacity     = 3

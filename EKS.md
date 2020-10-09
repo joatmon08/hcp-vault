@@ -103,7 +103,7 @@ $ vault secrets enable database
 Success! Enabled the database secrets engine at: database/
 ```
 
-## Deploy Vault Agents to EKS
+## Deploy Vault Agents to Kubernetes
 
 Retrieve the Helm chart from the HashiCorp Helm repository.
 

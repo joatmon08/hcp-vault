@@ -4,15 +4,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: nyc
+  name: web
 spec:
   selector:
-    app: nyc
+    app: web
   ports:
     - name: http
       protocol: TCP
-      port: 8080
-      targetPort: 8080
+      port: 9090
+      targetPort: 9090
 
 ---
 # Service account to allow pod access to Vault via K8s auth
@@ -20,7 +20,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: nyc
+  name: web
 automountServiceAccountToken: true
 
 ---
@@ -29,23 +29,23 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nyc
+  name: web
   labels:
-    app: nyc
+    app: web
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: nyc
+      app: web
   template:
     metadata:
       labels:
-        app: nyc
+        app: web
       annotations:
         vault.hashicorp.com/agent-inject: "true"
-        vault.hashicorp.com/role: "nyc"
+        vault.hashicorp.com/role: "web"
         vault.hashicorp.com/namespace: "admin"
-        vault.hashicorp.com/agent-inject-secret-config: "database/creds/nyc"
+        vault.hashicorp.com/agent-inject-secret-config: "database/creds/web"
         vault.hashicorp.com/agent-inject-template-config: |
           {
             "bind_address": ":9090",
@@ -57,7 +57,7 @@ spec:
       serviceAccountName: web
       containers:
         - name: web
-          image: nicholasjackson/vault-demo-app:v0.0.1
+          image: hashicorpdemoapp/product-api:v0.0.11
           ports:
             - containerPort: 9090
           env:

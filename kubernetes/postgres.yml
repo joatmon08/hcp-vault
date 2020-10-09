@@ -32,13 +32,19 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: joatmon08/nyc311-database
+          image: hashicorpdemoapp/product-api-db:v0.0.11
           ports:
             - containerPort: 5432
           env:
             - name: POSTGRES_DB
-              value: nyc
+              value: products
             - name: POSTGRES_USER
               value: postgres
             - name: POSTGRES_PASSWORD
               value: password
+          volumeMounts:
+            - mountPath: "/var/lib/postgresql/data"
+              name: "pgdata"
+      volumes:
+        - name: pgdata
+          emptyDir: {}

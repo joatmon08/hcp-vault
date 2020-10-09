@@ -1,8 +1,8 @@
-# HCP Vault with AWS EKS
+# HashiCorp Cloud Platform Vault with AWS Elastic Kubernetes Service
 
 ## Prerequisites
 
-- HashiCorp Virtual Network
+- HashiCorp Virtual Network (HVN)
 - EKS Cluster and VPC in AWS, region should be `us-west-2`. If you need an example configuration,
   check out the Terraform in [this repository](./eks).
 - Set your local KUBECONFIG to the EKS cluster.
@@ -10,9 +10,11 @@
   export AWS_REGION=us-west-2
   aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME}
   ```
-- Security Group for your EKS cluster that allows inbound connections from the Vault CIDR Block
+- Security Group for your EKS cluster that allows inbound connections from the Vault CIDR Block.
+  We use the `NodePort` configuration for Kubernetes services to allow Vault to connect to Kubernetes
+  without a load balancer.
 
-## Add the Peering Connection
+## Add the Peering Connection from EKS to HVN
 
 Go to Resources -> HashiCorp Virtual Network. Go to the
 "Peering Connection" tab and click "Create Peering Connection".
@@ -54,7 +56,7 @@ Copy the administrator token and set it in your terminal
 to an environment variable `VAULT_TOKEN`.
 
 ```shell
-$ export VAULT_TOKEN=s.*******************
+$ VAULT_TOKEN=s.*******************
 ```
 
 Click the clipboard next to "Public". This will copy the public Vault
@@ -66,8 +68,8 @@ Copy and paste the Vault address and set it as `VAULT_ADDR` and namespace as `VA
 into your command line.
 
 ```shell
-$ export VAULT_ADDR=https://vault-cluster.vault.**************.aws.hashicorp.cloud:8200
-$ export VAULT_NAMESPACE=admin
+$ VAULT_ADDR=https://vault-cluster.vault.**************.aws.hashicorp.cloud:8200
+$ VAULT_NAMESPACE=admin
 ```
 
 Click the clipboard next to "Private". This will copy the private Vault
@@ -80,19 +82,21 @@ environment variable. You can use the private address because the EKS cluster wi
 access HCP Vault over HVN.
 
 ```shell
-$ export VAULT_PRIVATE_ADDR=https://vault-cluster.private.vault.**************.aws.hashicorp.cloud:8200
+$ VAULT_PRIVATE_ADDR=https://vault-cluster.private.vault.**************.aws.hashicorp.cloud:8200
 ```
 
 ## Enable Auth Methods amd Secrets Engines
 
-In your terminal, enable the Kubernetes Auth Method.
+In your terminal, enable the Kubernetes Auth Method. This will allow
+services on Kubernetes to authenticate to Vault for secrets.
 
 ```shell
 $ vault auth enable kubernetes                                                                                                            
 Success! Enabled kubernetes auth method at: kubernetes/
 ```
 
-Then, enable the PostgreSQL Secrets engine.
+Then, enable the PostgreSQL Secrets engine. This facilitates the rotation
+and management of database usernames and passwords.
 
 ```shell
 $ vault secrets enable database
@@ -109,6 +113,8 @@ $ helm repo add hashicorp https://helm.releases.hashicorp.com
 ```
 
 Create a `values.yaml` file that sets the external servers to HCP Consul.
+This will deploy a Vault agent injector into the cluster without a full Vault
+server setup.
 
 ```shell
 $ echo 'injector:
@@ -118,7 +124,7 @@ $ echo 'injector:
     tag: "1.5.4"' > values.yml
 ```
 
-Deploy the Vault Helm chart with the Vault agent
+Deploy the Vault Helm chart with the Vault agent.
 
 ```shell
 $ helm install vault hashicorp/vault -f values.yml
@@ -133,6 +139,8 @@ vault-agent-injector-c8fd9fc5f-jhhw9   1/1     Running   0          2m11s
 ```
 
 Now, configure a Kubernetes service account for the Kubernetes Auth Method.
+Since you do not deploy servers, you need to get a JSON Web Token from Kubernetes
+to allow Vault access.
 
 ```shell
 $ kubectl apply -f kubernetes/vaultauth.yml
@@ -162,6 +170,9 @@ Success! Data written to: auth/kubernetes/config
 
 ## Deploy a Database
 
+Deploy a PostgreSQL database. This contains data for various coffees related to a
+demo application, all hosted in the `products` database.
+
 ```shell
 $ kubectl apply -f kubernetes/postgres.yml
 service/postgres created
@@ -175,51 +186,28 @@ vault-agent-injector-c8fd9fc5f-jhhw9   1/1     Running   0          2m34s
 
 ## Add the Database role to Vault
 
-Create the database configuration that allows Vault to connect to Postgres.
+Create the database configuration that allows Vault to connect to Postgres. The
+`postgres` service uses Kubernetes's `NodePort` configuration, which advertises the service
+on its Kubernetes host IP and randomly allocated port.
 
 ```shell
 $ POSTGRES_PORT=$(kubectl get -o jsonpath="{.spec.ports[0].nodePort}" services postgres)
 
 $ POSTGRES_IP=$(kubectl get pods --selector app=postgres -o jsonpath='{.items[*].status.hostIP}')
 
-$ vault write database/config/nyc \
+$ vault write database/config/products \
     plugin_name=postgresql-database-plugin \
     allowed_roles="*" \
-    connection_url="postgresql://{{username}}:{{password}}@${POSTGRES_IP}:${POSTGRES_PORT}/nyc?sslmode=disable" \
+    connection_url="postgresql://{{username}}:{{password}}@${POSTGRES_IP}:${POSTGRES_PORT}/products?sslmode=disable" \
     username="postgres" \
     password="password"
 ```
 
-You know you can successfully access the Vault cluster if you can log in with the PostgreSQL password you
-sent to Vault.
+In your terminal, create a database role for `web` that allows Vault to issue database passwords.
 
 ```shell
-$ kubectl exec -it $(kubectl get pods --selector "app=postgres" -o jsonpath="{.items[0].metadata.name}") \
-   -c postgres -- bash -c 'PGPASSWORD=password psql -U postgres'
-
-psql (11.6 (Debian 11.6-1.pgdg90+1))
-Type "help" for help.
-
-postgres-# \l
-                                 List of databases
-   Name    |  Owner   | Encoding |  Collate   |   Ctype    |   Access privileges   
------------+----------+----------+------------+------------+-----------------------
- nyc       | postgres | UTF8     | en_US.utf8 | en_US.utf8 | 
- postgres  | postgres | UTF8     | en_US.utf8 | en_US.utf8 | 
- template0 | postgres | UTF8     | en_US.utf8 | en_US.utf8 | =c/postgres          +
-           |          |          |            |            | postgres=CTc/postgres
- template1 | postgres | UTF8     | en_US.utf8 | en_US.utf8 | =c/postgres          +
-           |          |          |            |            | postgres=CTc/postgres
-(4 rows)
-
-postgres-# \q
-```
-
-In your terminal, create a database role that allows Vault to issue database passwords.
-
-```shell
-$ vault write database/roles/nyc \
-    db_name=nyc \
+$ vault write database/roles/web \
+    db_name=products \
     creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; \
         GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
     revocation_statements="ALTER ROLE \"{{name}}\" NOLOGIN;"\
@@ -230,17 +218,20 @@ $ vault write database/roles/nyc \
 Using this role, can actually get a new set of credentials from Vault for the PostgreSQL database!
 
 ```shell
-$ vault read database/creds/nyc
+$ vault read database/creds/web
 Key                Value
 ---                -----
-lease_id           database/creds/nyc/V0oSoqQyHQraGAnW0O7jEz0Z.9NK0g
+lease_id           database/creds/web/V0oSoqQyHQraGAnW0O7jEz0Z.9NK0g
 lease_duration     1h
 lease_renewable    true
 password           REDACTED
 username           v-token-hc-db-app-ZamODsbHMPfejm0j2of1-1602182547
 ```
 
-## [WIP] Get the service to authenticate to Vault
+## Update Vault to allow access to database for web service
+
+Create a file called `web.hcl` that allows the `web` service
+to read the database credentials specific to `web`.
 
 ```shell
 $ cat <<EOF > web.hcl
@@ -250,12 +241,16 @@ path "database/creds/web" {
 EOF
 ```
 
+Write the policy to Vault.
+
 ```shell
 $ vault policy write web ./web.hcl
 Success! Uploaded policy: web
 ```
 
-Bind the service account to the web application.
+Configure Vault to associate the `web` service with a Kubernetes
+service account. This allows the `web` service account in Kubernetes
+to get a Vault token.
 
 ```shell
 $ vault write auth/kubernetes/role/web \
@@ -264,6 +259,8 @@ $ vault write auth/kubernetes/role/web \
     policies=web \
     ttl=1h
 ```
+
+## Deploy the web service
 
 Deploy the web service. Make sure that you include your HCP
 Vault namespce in your Kubernetes manifest!
@@ -278,14 +275,148 @@ serviceaccount/web created
 deployment.apps/web-deployment created
 ```
 
-The web deployments should initialize with postgres enabled.
+The web deployments should initialize.
 
 ```shell
-
+$ kubectl get pods
+NAME                                   READY   STATUS    RESTARTS   AGE
+postgres-5bbfc8bb5c-xfzgp              1/1     Running   0          18m
+vault-agent-injector-c8fd9fc5f-jhhw9   1/1     Running   0          14h
+web-57fbc6f5d7-tk8m6                   2/2     Running   0          33s
+web-57fbc6f5d7-tk9xm                   2/2     Running   0          33s
 ```
+
+Port forward the web service locally to port 9090.
+
+```shell
+$ kubectl port-forward service/web 9090
+Forwarding from 127.0.0.1:9090 -> 9090
+Forwarding from [::1]:9090 -> 9090
+```
+
+Open __another__ terminal and make a request to `localhost:9090/coffees` to check if the web service
+can pull coffee information from the database.
+
+```shell
+$ curl -s localhost:9090/coffees | jq .
+[
+  {
+    "id": 1,
+    "name": "Packer Spiced Latte",
+    "teaser": "Packed with goodness to spice up your images",
+    "description": "",
+    "price": 350,
+    "image": "/packer.png",
+    "ingredients": [
+      {
+        "ingredient_id": 1
+      },
+      {
+        "ingredient_id": 2
+      },
+      {
+        "ingredient_id": 4
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Vaulatte",
+    "teaser": "Nothing gives you a safe and secure feeling like a Vaulatte",
+    "description": "",
+    "price": 200,
+    "image": "/vault.png",
+    "ingredients": [
+      {
+        "ingredient_id": 1
+      },
+      {
+        "ingredient_id": 2
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "Nomadicano",
+    "teaser": "Drink one today and you will want to schedule another",
+    "description": "",
+    "price": 150,
+    "image": "/nomad.png",
+    "ingredients": [
+      {
+        "ingredient_id": 1
+      },
+      {
+        "ingredient_id": 3
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "Terraspresso",
+    "teaser": "Nothing kickstarts your day like a provision of Terraspresso",
+    "description": "",
+    "price": 150,
+    "image": "/terraform.png",
+    "ingredients": [
+      {
+        "ingredient_id": 1
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "Vagrante espresso",
+    "teaser": "Stdin is not a tty",
+    "description": "",
+    "price": 200,
+    "image": "/vagrant.png",
+    "ingredients": [
+      {
+        "ingredient_id": 1
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "Connectaccino",
+    "teaser": "Discover the wonders of our meshy service",
+    "description": "",
+    "price": 250,
+    "image": "/consul.png",
+    "ingredients": [
+      {
+        "ingredient_id": 1
+      },
+      {
+        "ingredient_id": 5
+      }
+    ]
+  }
+]
+```
+
+When you are done, return to the terminal with the `port-forward`
+command and type `Ctrl + C` to exit.
 
 ## Clean Up
 
-```shell
+Remove everything from Kubernetes.
 
+```shell
+$ kubectl apply -f kubernetes/
 ```
+
+Remove everything from Vault
+
+```shell
+$ vault delete auth/kubernetes/role/web
+
+$ vault policy delete web
+
+$ vault delete database/roles/web
+
+$ vault delete database/config/web
+```
+
+If you try to port forward the coffee API

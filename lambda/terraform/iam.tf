@@ -59,6 +59,6 @@ data "aws_iam_policy_document" "lambda" {
     actions = [
       "sts:AssumeRole"
     ]
-    resources = ["arn:aws:iam::468001993716:role/VaultAccess"]
+    resources = ["arn:aws:iam::468001993716:role/*"]
   }
 }

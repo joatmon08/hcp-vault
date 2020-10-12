@@ -53,7 +53,7 @@ Specifically, mostly from [this guide](https://learn.hashicorp.com/tutorials/vau
 ## Additional instructions
 
 ```shell
-$ aws lambda update-function-configuration --function-name hcp-vault-lambda-extension-demo-function \
+$ aws lambda update-function-configuration --function-name $(terraform output lambda_function_name) \
 --layers arn:aws:lambda:us-west-2:634166935893:layer:vault-lambda-extension:6
 {
     "FunctionName": "hcp-vault-lambda-extension-demo-function",

@@ -25,6 +25,15 @@ data "aws_iam_policy_document" "assume_role_lambda" {
       identifiers = ["lambda.amazonaws.com"]
     }
   }
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["468001993716"]
+    }
+  }
 }
 
 data "aws_iam_policy_document" "lambda" {
@@ -51,14 +60,5 @@ data "aws_iam_policy_document" "lambda" {
       "iam:GetRole",
     ]
     resources = ["*"]
-  }
-
-  statement {
-    sid    = "HCPVault"
-    effect = "Allow"
-    actions = [
-      "sts:AssumeRole"
-    ]
-    resources = ["arn:aws:iam::468001993716:role/*"]
   }
 }

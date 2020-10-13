@@ -5,5 +5,5 @@ combinations of HCP Vault and other systems.
 
 Current Guides:
 
-- [Amazon EKS](EKS.md) - Allows private connection via HVN
-- Google Kubernetes Engine - Over public connection
+- [Amazon EKS](EKS.md) - Private connection by peering between HVN and Kubernetes VPC
+- [Google Kubernetes Engine](GKE.md) - Over __public connection__

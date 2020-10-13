@@ -1,33 +1,24 @@
-# HashiCorp Cloud Platform Vault with AWS Elastic Kubernetes Service
+# HashiCorp Cloud Platform Vault with Google Kubernetes Engine
+
+> Note: In this guide, HCP Vault and GKE communicate over a public connection! 
+> It is __not intended__ for production deployment.
 
 ## Prerequisites
 
 - HashiCorp Virtual Network (HVN)
-- EKS Cluster and VPC in AWS, region should be `us-west-2`. If you need an example configuration,
-  check out the Terraform in [this repository](./eks).
-- Set your local KUBECONFIG to the EKS cluster.
+
+- A __publicly available__ GKE Cluster in region `us-west1`. If you need an example configuration,
+  check out the Terraform in [this repository](./gke). 
+
+- Set your local KUBECONFIG to the GKE cluster.
   ```shell
-  export AWS_REGION=us-west-2
-  aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME}
+  $ gcloud container clusters get-credentials ${GKE_CLUSTER_NAME} --region us-west1
   ```
-- Security Group for your EKS cluster that allows inbound connections from the Vault CIDR Block.
-  We use the `NodePort` configuration for Kubernetes services to allow Vault to connect to Kubernetes
-  without a load balancer.
 
-## Add the Peering Connection from EKS to HVN
+- Allow Load Balancers to be created in GCP. We use the `LoadBalancer` setting in the
+  Kubernetes service to allow HCP to communicate with the database publicly.
 
-Go to Resources -> HashiCorp Virtual Network. Go to the
-"Peering Connection" tab and click "Create Peering Connection".
-
-![Peering Page](./assets/peering_page.png)
-
-Add your AWS Account ID, VPC ID hosted the ECS cluster, region,
-and VPC CIDR block. Select "Create Connection".
-
-![Create Peering Connection](./assets/create_connection.png)
-
-You will need to go into the AWS Console and accept the peering
-connection for HVN.
+- Allow traffic from the public HCP Vault endpoint to the Kubernetes cluster.
 
 ## Create an HCP Vault Cluster
 
@@ -72,19 +63,6 @@ $ VAULT_ADDR=https://vault-cluster.vault.**************.aws.hashicorp.cloud:8200
 $ VAULT_NAMESPACE=admin
 ```
 
-Click the clipboard next to "Private". This will copy the private Vault
-address to your clipboard.
-
-![HCP Vault Cluster](./assets/private_url.png)
-
-Copy and paste the Vault __private__ address into your command line as the `VAULT_PRIVATE_ADDR`
-environment variable. You can use the private address because the EKS cluster will use it to
-access HCP Vault over HVN.
-
-```shell
-$ VAULT_PRIVATE_ADDR=https://vault-cluster.private.vault.**************.aws.hashicorp.cloud:8200
-```
-
 ## Enable Auth Methods amd Secrets Engines
 
 In your terminal, enable the Kubernetes Auth Method. This will allow
@@ -119,7 +97,7 @@ server setup.
 ```shell
 $ echo 'injector:
   enabled: true
-  externalVaultAddr: "'${VAULT_PRIVATE_ADDR}'"
+  externalVaultAddr: "'${VAULT_ADDR}'"
   agentImage:
     tag: "1.5.4"' > values.yml
 ```
@@ -171,10 +149,11 @@ Success! Data written to: auth/kubernetes/config
 ## Deploy a Database
 
 Deploy a PostgreSQL database. This contains data for various coffees related to a
-demo application, all hosted in the `products` database.
+demo application, all hosted in the `products` database. The configuration creates
+a GPC load balancer that fronts the PostgreSQL database in Kubernetes.
 
 ```shell
-$ kubectl apply -f kubernetes/postgres.yml
+$ kubectl apply -f kubernetes/postgres-lb.yml
 service/postgres created
 deployment.apps/postgres created
 
@@ -182,6 +161,12 @@ $ kubectl get pods
 NAME                                   READY   STATUS    RESTARTS   AGE
 postgres-5bbfc8bb5c-9px77              1/1     Running   0          31s
 vault-agent-injector-c8fd9fc5f-jhhw9   1/1     Running   0          2m34s
+
+$ kubectl get services
+NAME                       TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)          AGE
+kubernetes                 ClusterIP      10.3.240.1     <none>          443/TCP          14m
+postgres                   LoadBalancer   10.3.245.186   34.83.173.136   5432:30972/TCP   5m47s
+vault-agent-injector-svc   ClusterIP      10.3.252.68    <none>          443/TCP          8m58s
 ```
 
 ## Add the Database role to Vault
@@ -191,9 +176,9 @@ Create the database configuration that allows Vault to connect to Postgres. The
 on its Kubernetes host IP and randomly allocated port.
 
 ```shell
-$ POSTGRES_PORT=$(kubectl get -o jsonpath="{.spec.ports[0].nodePort}" services postgres)
+$ POSTGRES_PORT=$(kubectl get -o jsonpath="{.spec.ports[0].targetPort}" services postgres)
 
-$ POSTGRES_IP=$(kubectl get pods --selector app=postgres -o jsonpath='{.items[*].status.hostIP}')
+$ POSTGRES_IP=$(kubectl get services postgres -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 $ vault write database/config/products \
     plugin_name=postgresql-database-plugin \
@@ -407,7 +392,7 @@ Remove everything from Kubernetes.
 $ kubectl delete -f kubernetes/
 ```
 
-Remove everything from Vault
+Remove everything from Vault.
 
 ```shell
 $ vault delete auth/kubernetes/role/web

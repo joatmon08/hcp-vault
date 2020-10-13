@@ -31,7 +31,7 @@ data "aws_iam_policy_document" "assume_role_lambda" {
 
     principals {
       type        = "AWS"
-      identifiers = ["468001993716"]
+      identifiers = [var.hcp_vault_account]
     }
   }
 }

@@ -20,3 +20,7 @@ variable "hcp_vault_addr" {
 variable "hcp_vault_namespace" {
   description = "Namespace for HCP Vault"
 }
+
+variable "hcp_vault_account" {
+  description = "AWS Account ID for HCP Vault"
+}

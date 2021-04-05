@@ -2,14 +2,14 @@ terraform {
   required_version = "~>0.13"
   required_providers {
     aws = {
-      version = "3.4.0"
+      source  = "hashicorp/aws"
+      version = "~> 3.35"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "1.13.1"
+      version = "~> 2.0"
     }
   }
-  backend "remote" {}
 }
 
 provider "aws" {

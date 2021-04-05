@@ -3,3 +3,4 @@ secrets/
 values.yml
 *.tfvars
 web.hcl
+terraform.tfstate*

@@ -10,10 +10,6 @@ variable "hcp_consul_cidr_block" {
   default = "172.25.16.0/20"
 }
 
-variable "peering_connection_has_been_added_to_hvn" {
-  default = false
-}
-
 variable "tags" {
   default = {
     Environment = "hcp-vault"
